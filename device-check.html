@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>장치 점검 — 압박면접 시뮬레이터</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .check-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media(max-width:600px){ .check-grid { grid-template-columns:1fr; } }
+
+  .check-row { display:flex; align-items:center; gap:10px; padding:10px 0;
+               border-bottom:1px solid var(--border); }
+  .check-row:last-child { border-bottom:none; }
+  .check-label { flex:1; font-size:13px; }
+  .check-result { font-size:12px; font-weight:600; }
+
+  #camera-preview-box {
+    width:100%; aspect-ratio:4/3; background:#000;
+    border-radius:10px; overflow:hidden; position:relative;
+  }
+  #camera-video { width:100%; height:100%; object-fit:cover; transform:scaleX(-1); }
+  #face-overlay { position:absolute; inset:0; pointer-events:none; }
+  .cam-badge { position:absolute; bottom:8px; left:8px; padding:3px 10px;
+               border-radius:10px; font-size:11px; font-weight:700;
+               background:rgba(0,0,0,.75); }
+
+  .mic-meter { display:flex; align-items:flex-end; gap:2px; height:32px; padding:4px 0; }
+  .mic-bar { width:5px; height:6px; background:var(--border); border-radius:2px;
+             transition:height .08s; }
+  .mic-bar.active { background:var(--success); }
+
+  .fallback-note { background:rgba(224,82,82,.1); border:1px solid rgba(224,82,82,.3);
+                   border-radius:8px; padding:10px 14px; font-size:12px;
+                   color:var(--danger); margin-top:8px; }
+
+  .nav-row { display:flex; gap:12px; justify-content:flex-end; margin-top:24px; }
+</style>
+</head>
+<body>
+
+<header class="page-header">
+  <button class="btn btn-ghost" style="padding:6px 12px" onclick="goTo('index.html')">← 뒤로</button>
+  <span class="logo-text" style="margin-left:8px">장치 <span>점검</span></span>
+</header>
+
+<div class="container">
+
+  <div class="check-grid">
+
+    <!-- 카메라 -->
+    <div class="card">
+      <div style="font-size:13px;font-weight:700;margin-bottom:12px">📷 카메라</div>
+      <div id="camera-preview-box">
+        <video id="camera-video" autoplay muted playsinline></video>
+        <canvas id="face-overlay"></canvas>
+        <div class="cam-badge" id="face-badge">감지 대기 중...</div>
+      </div>
+      <div style="margin-top:12px">
+        <div class="check-row">
+          <span class="status-dot" id="dot-camera"></span>
+          <span class="check-label">카메라 권한</span>
+          <span class="check-result" id="res-camera">확인 중...</span>
+        </div>
+        <div class="check-row">
+          <span class="status-dot" id="dot-face"></span>
+          <span class="check-label">얼굴 감지</span>
+          <span class="check-result" id="res-face">대기</span>
+        </div>
+        <div class="check-row">
+          <span class="status-dot" id="dot-gaze"></span>
+          <span class="check-label">카메라 응시</span>
+          <span class="check-result" id="res-gaze">대기</span>
+        </div>
+      </div>
+      <div id="camera-fallback" class="fallback-note" style="display:none">
+        카메라 권한이 거부되었습니다.<br>
+        자막 모드로 계속할 수 있습니다.
+        <br><button class="btn btn-ghost" style="margin-top:8px;font-size:11px"
+          onclick="skipCamera()">카메라 없이 계속</button>
+      </div>
+      <div id="camera-guide" style="font-size:11px;color:var(--text-sub);margin-top:8px"></div>
+    </div>
+
+    <!-- 마이크 -->
+    <div class="card">
+      <div style="font-size:13px;font-weight:700;margin-bottom:12px">🎤 마이크</div>
+
+      <div class="check-row">
+        <span class="status-dot" id="dot-mic"></span>
+        <span class="check-label">마이크 권한</span>
+        <span class="check-result" id="res-mic">확인 중...</span>
+      </div>
+      <div class="check-row">
+        <span class="status-dot" id="dot-stt"></span>
+        <span class="check-label">음성 인식(STT)</span>
+        <span class="check-result" id="res-stt">대기</span>
+      </div>
+      <div class="check-row">
+        <span class="status-dot" id="dot-tts"></span>
+        <span class="check-label">TTS 음성 출력</span>
+        <span class="check-result" id="res-tts">대기</span>
+      </div>
+
+      <div style="margin-top:14px">
+        <div style="font-size:11px;color:var(--text-sub);margin-bottom:6px">마이크 레벨</div>
+        <div class="mic-meter" id="mic-meter">
+          <div class="mic-bar" id="mb0"></div>
+          <div class="mic-bar" id="mb1"></div>
+          <div class="mic-bar" id="mb2"></div>
+          <div class="mic-bar" id="mb3"></div>
+          <div class="mic-bar" id="mb4"></div>
+          <div class="mic-bar" id="mb5"></div>
+          <div class="mic-bar" id="mb6"></div>
+          <div class="mic-bar" id="mb7"></div>
+          <div class="mic-bar" id="mb8"></div>
+          <div class="mic-bar" id="mb9"></div>
+        </div>
+        <button class="btn btn-ghost" id="btn-mic-test"
+          style="font-size:12px;padding:7px 14px;margin-top:8px"
+          onclick="toggleMicTest()">🎤 마이크 테스트</button>
+      </div>
+
+      <div style="margin-top:14px">
+        <div style="font-size:11px;color:var(--text-sub);margin-bottom:6px">TTS 테스트</div>
+        <button class="btn btn-ghost" style="font-size:12px;padding:7px 14px"
+          onclick="testTTS()">🔊 음성 재생</button>
+      </div>
+
+      <div id="mic-fallback" class="fallback-note" style="display:none">
+        마이크 또는 STT를 사용할 수 없습니다.<br>텍스트 입력 모드로 자동 전환됩니다.
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 조명/환경 가이드 -->
+  <div class="card" style="margin-top:16px">
+    <div style="font-size:13px;font-weight:700;margin-bottom:12px">💡 환경 가이드</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;font-size:12px;color:var(--text-sub)">
+      <div>📍 카메라와 눈높이 맞추기</div>
+      <div>💡 밝은 조명 (역광 피하기)</div>
+      <div>🔇 조용한 환경 (에코 주의)</div>
+      <div>👔 정장 착용 권장</div>
+    </div>
+  </div>
+
+  <!-- 세션 요약 -->
+  <div class="card" style="margin-top:16px" id="session-summary">
+    <div style="font-size:13px;font-weight:700;margin-bottom:10px">📋 세션 설정 요약</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap" id="summary-badges"></div>
+  </div>
+
+  <div class="nav-row">
+    <button class="btn btn-ghost" onclick="goTo('index.html')">← 설정 변경</button>
+    <button class="btn btn-primary" id="btn-start" onclick="startInterview()" disabled>
+      면접 시작 →
+    </button>
+  </div>
+
+</div>
+
+<div id="toast-container"></div>
+
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/speech.js"></script>
+<script src="js/face.js"></script>
+
+<script>
+  const config = APP.getSessionConfig();
+  let cameraOk = false, micOk = false;
+  let micStream = null, micContext = null, micAnimId = null;
+  let isMicTesting = false;
+  let faceService = null;
+
+  // ── 초기화 ─────────────────────────────────────
+  window.onload = async () => {
+    renderSummary();
+    await initCamera();
+    await initMic();
+    checkReady();
+  };
+
+  window.onunload = () => {
+    faceService?.stopCamera();
+    if (micContext) micContext.close();
+    if (micStream) micStream.getTracks().forEach(t => t.stop());
+  };
+
+  function renderSummary() {
+    const diffLabel = { easy:'하(쉬움)', medium:'중(보통)', hard:'상(어려움)' }[config.difficulty];
+    const modeLabel = { public_servant:'공무원', public_corp:'공기업', mixed:'혼합' }[config.mode];
+    const badges = [
+      `<span class="badge badge-${config.difficulty}">${diffLabel}</span>`,
+      `<span class="badge" style="background:rgba(79,142,247,.15);color:var(--accent)">${modeLabel}</span>`,
+      config.timeLimitEnabled ? `<span class="badge" style="background:rgba(224,154,58,.1);color:var(--warn)">시간 제한: ${config.timeLimitSec}초</span>` : '',
+      config.subtitleOnly ? `<span class="badge" style="background:var(--bg-card2);color:var(--text-sub)">자막 전용</span>` : '',
+      config.typingMode ? `<span class="badge" style="background:var(--bg-card2);color:var(--text-sub)">텍스트 입력</span>` : '',
+    ].filter(Boolean).join('');
+    document.getElementById('summary-badges').innerHTML = badges;
+  }
+
+  // ── 카메라 초기화 ─────────────────────────────
+  async function initCamera() {
+    const videoEl  = document.getElementById('camera-video');
+    const canvasEl = document.getElementById('face-overlay');
+    faceService = new FaceDetectionService(videoEl, canvasEl);
+
+    const ok = await faceService.startCamera();
+    setDot('dot-camera', ok ? 'ok' : 'error');
+    document.getElementById('res-camera').textContent = ok ? '허용됨' : '거부됨';
+
+    if (ok) {
+      cameraOk = true;
+      document.getElementById('camera-fallback').style.display = 'none';
+      faceService.onResult = onFaceResult;
+      await faceService.initFaceMesh();
+    } else {
+      document.getElementById('camera-fallback').style.display = 'block';
+      setDot('dot-face', 'error');
+      setDot('dot-gaze', 'error');
+      document.getElementById('res-face').textContent = '카메라 없음';
+      document.getElementById('res-gaze').textContent = '카메라 없음';
+    }
+  }
+
+  function onFaceResult(result) {
+    const badge = document.getElementById('face-badge');
+    const camBox = document.querySelector('#camera-preview-box');
+    if (result.faceDetected) {
+      setDot('dot-face', 'ok');
+      document.getElementById('res-face').textContent = '감지됨';
+      if (result.isLookingAtCamera) {
+        setDot('dot-gaze', 'ok');
+        document.getElementById('res-gaze').textContent = '응시 중';
+        badge.textContent = '✓ 얼굴 인식됨';
+        badge.style.color = 'var(--success)';
+        document.getElementById('camera-guide').textContent = '환경이 적절합니다.';
+      } else {
+        setDot('dot-gaze', 'warn');
+        document.getElementById('res-gaze').textContent = '시선 이탈';
+        badge.textContent = '카메라를 정면으로 봐주세요';
+        badge.style.color = 'var(--warn)';
+      }
+    } else {
+      setDot('dot-face', 'warn');
+      setDot('dot-gaze', 'warn');
+      document.getElementById('res-face').textContent = '미감지';
+      document.getElementById('res-gaze').textContent = '미감지';
+      badge.textContent = '얼굴을 화면에 맞춰주세요';
+      badge.style.color = 'var(--warn)';
+      document.getElementById('camera-guide').textContent = '조명을 밝게 하고, 카메라 가까이 앉아주세요.';
+    }
+    checkReady();
+  }
+
+  // ── 마이크 초기화 ─────────────────────────────
+  async function initMic() {
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      micOk = true;
+      setDot('dot-mic', 'ok');
+      document.getElementById('res-mic').textContent = '허용됨';
+    } catch {
+      setDot('dot-mic', 'error');
+      document.getElementById('res-mic').textContent = '거부됨';
+      document.getElementById('mic-fallback').style.display = 'block';
+    }
+
+    // STT 지원 여부
+    const sttOk = speechService.isAvailable;
+    setDot('dot-stt', sttOk ? 'ok' : 'warn');
+    document.getElementById('res-stt').textContent = sttOk ? '지원됨' : '미지원(텍스트모드)';
+
+    // TTS 지원 여부
+    const ttsOk = speechService.isTTSAvailable;
+    setDot('dot-tts', ttsOk ? 'ok' : 'warn');
+    document.getElementById('res-tts').textContent = ttsOk ? '지원됨' : '미지원(자막모드)';
+
+    checkReady();
+  }
+
+  // ── 마이크 테스트 ─────────────────────────────
+  function toggleMicTest() {
+    const btn = document.getElementById('btn-mic-test');
+    if (!isMicTesting) {
+      if (!micStream) { showToast('마이크 권한이 없습니다', 'warn'); return; }
+      micContext = new AudioContext();
+      const src = micContext.createMediaStreamSource(micStream);
+      const analyser = micContext.createAnalyser();
+      analyser.fftSize = 256;
+      src.connect(analyser);
+      isMicTesting = true;
+      btn.textContent = '⏹ 테스트 중지';
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      const bars = document.querySelectorAll('.mic-bar');
+      const animate = () => {
+        if (!isMicTesting) return;
+        analyser.getByteFrequencyData(data);
+        const avg = data.reduce((a,b)=>a+b,0) / data.length / 255;
+        bars.forEach((bar, i) => {
+          const h = Math.max(4, data[i * 3] / 255 * 28);
+          bar.style.height = h + 'px';
+          bar.classList.toggle('active', avg > 0.02);
+        });
+        micAnimId = requestAnimationFrame(animate);
+      };
+      animate();
+    } else {
+      isMicTesting = false;
+      cancelAnimationFrame(micAnimId);
+      btn.textContent = '🎤 마이크 테스트';
+      document.querySelectorAll('.mic-bar').forEach(b => {
+        b.style.height = '6px'; b.classList.remove('active');
+      });
+    }
+  }
+
+  function testTTS() {
+    speechService.speak('안녕하세요. 면접을 시작하겠습니다. 준비되셨습니까?', 'authority');
+  }
+
+  // ── 폴백 ──────────────────────────────────────
+  function skipCamera() {
+    cameraOk = true; // 없어도 진행 허용
+    config.subtitleOnly = true;
+    APP.setSessionConfig(config);
+    document.getElementById('camera-fallback').style.display = 'none';
+    showToast('카메라 없이 진행합니다', 'info');
+    checkReady();
+  }
+
+  // ── 시작 가능 여부 ─────────────────────────────
+  function checkReady() {
+    // 카메라 또는 마이크 중 하나라도 있으면 시작 허용
+    // 둘 다 없어도 텍스트 모드면 허용
+    const ready = true; // MVP: 항상 시작 허용 (권한 없어도 폴백으로 진행)
+    document.getElementById('btn-start').disabled = false;
+  }
+
+  // ── 면접 시작 ──────────────────────────────────
+  function startInterview() {
+    faceService?.stopCamera();
+    if (micContext) micContext.close();
+    // 마이크 권한 없으면 타이핑 모드 강제
+    if (!micOk) { config.typingMode = true; APP.setSessionConfig(config); }
+    goTo('interview.html');
+  }
+
+  // ── 유틸 ──────────────────────────────────────
+  function setDot(id, state) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.className = 'status-dot ' + state;
+  }
+</script>
+</body>
+</html>

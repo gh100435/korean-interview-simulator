@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>압박면접 시뮬레이터</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .hero { text-align: center; padding: 40px 0 28px; }
+  .hero h1 { font-size: 28px; font-weight: 900; letter-spacing: -.02em; }
+  .hero h1 span { color: var(--accent); }
+  .hero p  { color: var(--text-sub); margin-top: 8px; font-size: 14px; }
+
+  .section-block { margin-bottom: 20px; }
+  .section-block h2 { font-size: 13px; font-weight: 700; color: var(--text-dim);
+                      text-transform: uppercase; letter-spacing: .08em; margin-bottom: 10px; }
+
+  /* 난이도 카드 */
+  .diff-card { flex:1; min-width:100px; padding:16px 12px; background:var(--bg-card2);
+               border:2px solid var(--border); border-radius:10px; cursor:pointer;
+               transition:all .18s; text-align:center; }
+  .diff-card:hover { border-color:var(--accent); }
+  .diff-card.active { border-color:var(--accent); background:rgba(79,142,247,.12); }
+  .diff-card .diff-icon { font-size:28px; margin-bottom:8px; }
+  .diff-card .diff-name { font-weight:700; font-size:14px; }
+  .diff-card .diff-desc { font-size:11px; color:var(--text-sub); margin-top:4px; line-height:1.4; }
+
+  /* 패널 미리보기 */
+  .panel-preview { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; min-height:36px; }
+  .panel-chip { padding:4px 10px; background:var(--bg-card2); border:1px solid var(--border);
+                border-radius:20px; font-size:11px; color:var(--text-sub); }
+
+  /* Ollama 상태 */
+  .ollama-status-row { display:flex; align-items:center; gap:10px; }
+  .ollama-dot { width:10px; height:10px; border-radius:50%; background:var(--text-dim); flex-shrink:0; }
+  .ollama-dot.ok  { background:var(--success); box-shadow:0 0 6px rgba(67,201,123,.6); }
+  .ollama-dot.err { background:var(--danger);  box-shadow:0 0 6px rgba(229,72,77,.6); }
+  #ollama-status-text { font-size:13px; }
+  #ollama-detail { font-size:11px; color:var(--text-dim); margin-top:4px; }
+
+  /* 시작 버튼 */
+  .start-area { margin-top:28px; text-align:center; }
+  #btn-start { padding:14px 48px; font-size:16px; border-radius:12px; }
+
+  .tip { font-size:11px; color:var(--text-dim); margin-top:10px; }
+</style>
+</head>
+<body>
+
+<header class="page-header">
+  <span class="logo-text">압박면접 <span>시뮬레이터</span></span>
+  <span style="margin-left:auto;font-size:11px;color:var(--text-dim)">MVP v0.1</span>
+</header>
+
+<div class="container">
+
+  <!-- HERO -->
+  <div class="hero">
+    <h1>실전처럼, 지금 바로<br><span>압박면접 훈련</span></h1>
+    <p>공무원·공기업 면접 대비 | AI 면접관 10종 | 실시간 피드백</p>
+  </div>
+
+  <!-- Ollama 연결 상태 -->
+  <div class="card section-block">
+    <h2>🤖 Ollama 로컬 AI</h2>
+    <div class="ollama-status-row">
+      <div class="ollama-dot" id="ollama-dot"></div>
+      <span id="ollama-status-text">연결 확인 중...</span>
+      <button class="btn btn-ghost" style="margin-left:auto;padding:4px 10px;font-size:11px"
+        onclick="checkOllama()">새로고침</button>
+    </div>
+    <div id="ollama-detail"></div>
+  </div>
+
+  <!-- 난이도 -->
+  <div class="card section-block">
+    <h2>📊 난이도 선택</h2>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <div class="diff-card" id="diff-easy" onclick="selectDiff('easy')">
+        <div class="diff-icon">😊</div>
+        <div class="diff-name">하 (쉬움)</div>
+        <div class="diff-desc">친절한 질문 중심<br>꼬리질문 낮음<br>시간 여유</div>
+      </div>
+      <div class="diff-card active" id="diff-medium" onclick="selectDiff('medium')">
+        <div class="diff-icon">😐</div>
+        <div class="diff-name">중 (보통)</div>
+        <div class="diff-desc">검증 질문 증가<br>꼬리질문 중간<br>시간 제한 도입</div>
+      </div>
+      <div class="diff-card" id="diff-hard" onclick="selectDiff('hard')">
+        <div class="diff-icon">😤</div>
+        <div class="diff-name">상 (어려움)</div>
+        <div class="diff-desc">공격적 압박<br>잦은 끼어들기<br>촘촘한 시간 제한</div>
+      </div>
+    </div>
+    <!-- 패널 미리보기 -->
+    <div style="margin-top:14px">
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">예상 면접관 패널</div>
+      <div class="panel-preview" id="panel-preview"></div>
+    </div>
+  </div>
+
+  <!-- 모드 -->
+  <div class="card section-block">
+    <h2>🏛️ 면접 유형</h2>
+    <div class="select-group">
+      <div class="select-btn" id="mode-public" onclick="selectMode('public_servant')">공무원</div>
+      <div class="select-btn" id="mode-corp"   onclick="selectMode('public_corp')">공기업</div>
+      <div class="select-btn active" id="mode-mixed"  onclick="selectMode('mixed')">혼합</div>
+    </div>
+  </div>
+
+  <!-- 옵션 -->
+  <div class="card section-block">
+    <h2>⚙️ 옵션</h2>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+        <input type="checkbox" id="opt-timelimit" checked style="width:16px;height:16px;accent-color:var(--accent)">
+        <span style="font-size:13px">답변 시간 제한 사용</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+        <input type="checkbox" id="opt-subtitle" style="width:16px;height:16px;accent-color:var(--accent)">
+        <span style="font-size:13px">자막 전용 모드 (TTS/STT 음성 없이)</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+        <input type="checkbox" id="opt-typing" style="width:16px;height:16px;accent-color:var(--accent)">
+        <span style="font-size:13px">텍스트 입력으로 답변 (마이크 없이)</span>
+      </label>
+    </div>
+  </div>
+
+  <!-- 시작 -->
+  <div class="start-area">
+    <button class="btn btn-primary" id="btn-start" onclick="startInterview()">
+      면접 START
+    </button>
+    <p class="tip">⚠️ Ollama가 실행 중이어야 합니다. 터미널에서 <code>ollama serve</code>를 먼저 실행하세요.</p>
+  </div>
+
+</div>
+
+<div id="toast-container"></div>
+
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script>
+  let selectedDiff = 'medium';
+  let selectedMode = 'mixed';
+  let ollamaOk = false;
+
+  // ── 초기화 ─────────────────────────────────────
+  window.onload = () => {
+    updatePanelPreview();
+    checkOllama();
+  };
+
+  // ── Ollama 연결 확인 ───────────────────────────
+  async function checkOllama() {
+    const dot  = document.getElementById('ollama-dot');
+    const text = document.getElementById('ollama-status-text');
+    const detail = document.getElementById('ollama-detail');
+
+    dot.className = 'ollama-dot';
+    text.textContent = '연결 확인 중...';
+    detail.textContent = '';
+
+    try {
+      // /api/tags 로 모델 목록 조회 (Ollama 헬스체크)
+      const res = await fetch(`${APP.ollamaUrl}/api/tags`, { signal: AbortSignal.timeout(4000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      const models = (data.models || []).map(m => m.name);
+      const targetModel = APP.ollamaModel;
+      const hasModel = models.some(m => m.startsWith(targetModel.split(':')[0]));
+
+      dot.className = 'ollama-dot ok';
+      ollamaOk = true;
+
+      if (hasModel) {
+        text.textContent = `연결됨 — ${targetModel} 준비 완료`;
+        text.style.color = 'var(--success)';
+        detail.textContent = `사용 가능한 모델: ${models.join(', ')}`;
+      } else {
+        text.textContent = `연결됨 — 모델 없음`;
+        text.style.color = 'var(--warn)';
+        detail.innerHTML = `<span style="color:var(--warn)">⚠️ <code>${targetModel}</code> 모델이 없습니다. 터미널에서 <code>ollama pull ${targetModel}</code> 실행 후 새로고침하세요.</span>`;
+        ollamaOk = false;
+      }
+    } catch (e) {
+      dot.className = 'ollama-dot err';
+      ollamaOk = false;
+      text.textContent = 'Ollama 미실행';
+      text.style.color = 'var(--danger)';
+      detail.innerHTML = `<span style="color:var(--danger)">터미널에서 <code>ollama serve</code>를 실행한 뒤 새로고침하세요.</span>`;
+    }
+  }
+
+  // ── 난이도 선택 ────────────────────────────────
+  function selectDiff(d) {
+    selectedDiff = d;
+    ['easy','medium','hard'].forEach(x =>
+      document.getElementById('diff-' + x).classList.toggle('active', x === d));
+    updatePanelPreview();
+  }
+
+  // ── 모드 선택 ──────────────────────────────────
+  function selectMode(m) {
+    selectedMode = m;
+    ['public','corp','mixed'].forEach(x =>
+      document.getElementById('mode-' + x).classList.remove('active'));
+    const map = { public_servant:'public', public_corp:'corp', mixed:'mixed' };
+    document.getElementById('mode-' + map[m])?.classList.add('active');
+  }
+
+  // ── 패널 미리보기 ──────────────────────────────
+  function updatePanelPreview() {
+    const panels = APP.difficultyPanels[selectedDiff];
+    const sample = panels[0]; // 첫 번째 조합 표시
+    const container = document.getElementById('panel-preview');
+    container.innerHTML = sample.map(id => {
+      const iw = APP.interviewers[id];
+      return `<span class="panel-chip">${iw?.emoji || '👤'} ${iw?.name || id}</span>`;
+    }).join('');
+  }
+
+  // ── 면접 시작 ──────────────────────────────────
+  function startInterview() {
+    if (!ollamaOk) {
+      showToast('Ollama가 연결되지 않았습니다. 상태를 확인하세요.', 'warn');
+      checkOllama();
+      return;
+    }
+    const config = {
+      difficulty:      selectedDiff,
+      mode:            selectedMode,
+      timeLimitEnabled: document.getElementById('opt-timelimit').checked,
+      timeLimitSec:    APP.timeLimitBySetting[selectedDiff],
+      subtitleOnly:    document.getElementById('opt-subtitle').checked,
+      typingMode:      document.getElementById('opt-typing').checked,
+    };
+    APP.setSessionConfig(config);
+    goTo('device-check.html');
+  }
+</script>
+</body>
+</html>

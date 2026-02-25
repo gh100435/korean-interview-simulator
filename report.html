@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>결과 리포트 — 압박면접 시뮬레이터</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .report-header {
+    text-align:center; padding:28px 0 20px;
+  }
+  .report-header h1 { font-size:22px; font-weight:900; }
+  .report-header .meta { font-size:12px; color:var(--text-sub); margin-top:6px; }
+
+  /* 점수 레이더 대체 - 그리드 형 점수카드 */
+  .score-section { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; }
+  .score-card {
+    background:var(--bg-card2); border:1px solid var(--border);
+    border-radius:10px; padding:14px 12px; text-align:center;
+  }
+  .score-card .s-label { font-size:10px; color:var(--text-sub); margin-bottom:6px; }
+  .score-card .s-value { font-size:28px; font-weight:900; }
+  .score-card .s-bar { height:4px; background:var(--border); border-radius:2px; margin-top:8px; }
+  .score-card .s-fill { height:100%; border-radius:2px; }
+
+  /* 강점/개선점 */
+  .feedback-cols { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media(max-width:580px){ .feedback-cols { grid-template-columns:1fr; } }
+
+  .feedback-list { list-style:none; display:flex; flex-direction:column; gap:6px; }
+  .feedback-list li {
+    padding:8px 12px; border-radius:8px;
+    font-size:12px; line-height:1.5;
+    display:flex; align-items:flex-start; gap:8px;
+  }
+  .feedback-list.strength li { background:rgba(67,201,123,.1); border:1px solid rgba(67,201,123,.2); }
+  .feedback-list.improve  li { background:rgba(224,154,58,.1);  border:1px solid rgba(224,154,58,.2); }
+
+  /* 답변 상세 */
+  .answer-item {
+    background:var(--bg-card2); border:1px solid var(--border);
+    border-radius:10px; padding:14px 16px; margin-bottom:10px;
+  }
+  .answer-item .a-q { font-size:12px; font-weight:700; color:var(--accent); margin-bottom:6px; }
+  .answer-item .a-text { font-size:13px; line-height:1.6; color:var(--text-main); }
+  .answer-item .a-meta {
+    margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;
+    font-size:10px; color:var(--text-sub);
+  }
+  .a-meta span { padding:2px 8px; background:var(--bg-dark); border-radius:10px; }
+  .a-meta span.ok   { color:var(--success); }
+  .a-meta span.warn { color:var(--warn); }
+
+  /* 종합 피드백 */
+  .overall-box {
+    background:rgba(79,142,247,.08); border:1px solid rgba(79,142,247,.2);
+    border-radius:12px; padding:18px 20px;
+    font-size:14px; line-height:1.8; color:var(--text-main);
+  }
+
+  /* 면책 */
+  .disclaimer {
+    background:rgba(255,255,255,.03); border:1px solid var(--border);
+    border-radius:8px; padding:12px 14px;
+    font-size:11px; color:var(--text-dim); line-height:1.6;
+  }
+
+  /* 내보내기 */
+  .export-row { display:flex; gap:10px; flex-wrap:wrap; }
+
+  /* 통계 칩 */
+  .stat-chips { display:flex; gap:8px; flex-wrap:wrap; }
+  .stat-chip {
+    padding:6px 14px; background:var(--bg-card2);
+    border:1px solid var(--border); border-radius:20px;
+    font-size:12px; color:var(--text-sub);
+  }
+  .stat-chip strong { color:var(--text-main); }
+</style>
+</head>
+<body>
+
+<header class="page-header">
+  <span class="logo-text">면접 결과 <span>리포트</span></span>
+</header>
+
+<div class="container">
+
+  <div class="report-header">
+    <h1 id="report-title">면접 완료!</h1>
+    <div class="meta" id="report-meta"></div>
+    <div style="margin-top:10px" id="report-badges"></div>
+  </div>
+
+  <!-- 핵심 통계 -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="section-title" style="margin-bottom:12px">📊 핵심 지표</div>
+    <div class="stat-chips" id="stat-chips"></div>
+  </div>
+
+  <!-- 점수 카드 -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="section-title" style="margin-bottom:12px">🎯 평가 점수</div>
+    <div class="score-section" id="score-section"></div>
+  </div>
+
+  <!-- 종합 피드백 -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="section-title" style="margin-bottom:12px">💬 종합 피드백</div>
+    <div class="overall-box" id="overall-feedback">
+      피드백을 불러오는 중...
+    </div>
+  </div>
+
+  <!-- 강점 / 개선점 -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="feedback-cols">
+      <div>
+        <div class="section-title" style="margin-bottom:10px;color:var(--success)">✅ 강점</div>
+        <ul class="feedback-list strength" id="strengths-list"></ul>
+      </div>
+      <div>
+        <div class="section-title" style="margin-bottom:10px;color:var(--warn)">🔧 개선점</div>
+        <ul class="feedback-list improve" id="improvements-list"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- 답변 상세 -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="section-title" style="margin-bottom:12px">📝 답변별 상세</div>
+    <div id="answers-detail"></div>
+  </div>
+
+  <!-- 면책 -->
+  <div class="disclaimer" style="margin-bottom:16px">
+    ※ 이 리포트는 AI 자동 분석 결과이며, 실제 면접 합격·불합격 여부와 무관합니다.<br>
+    음성·표정 분석 정확도는 조명, 환경, 기기 성능에 따라 차이가 있을 수 있습니다.
+  </div>
+
+  <!-- 내보내기 -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="section-title" style="margin-bottom:12px">💾 내보내기</div>
+    <div class="export-row">
+      <button class="btn btn-ghost" onclick="exportText()">📄 텍스트 저장</button>
+      <button class="btn btn-ghost" onclick="exportJSON()">🗂️ JSON 저장</button>
+      <button class="btn btn-ghost" onclick="copyToClipboard(buildTextReport())">📋 클립보드 복사</button>
+    </div>
+    <div id="export-status" style="font-size:11px;color:var(--text-sub);margin-top:6px"></div>
+  </div>
+
+  <!-- 하단 버튼 -->
+  <div style="display:flex;gap:12px;justify-content:center;padding-bottom:32px">
+    <button class="btn btn-ghost" onclick="goTo('device-check.html')">🔄 다시 하기</button>
+    <button class="btn btn-primary" onclick="goTo('index.html')">🏠 메인으로</button>
+  </div>
+
+</div>
+
+<div id="toast-container"></div>
+
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script>
+  window.onload = () => {
+    const report = APP.getSessionReport();
+    if (!report) {
+      document.getElementById('report-title').textContent = '리포트 없음';
+      document.getElementById('overall-feedback').textContent = '세션 데이터를 불러올 수 없습니다.';
+      return;
+    }
+    renderReport(report);
+  };
+
+  function renderReport(r) {
+    // 헤더
+    const diffLabel = { easy:'하(쉬움)', medium:'중(보통)', hard:'상(어려움)' }[r.difficulty] || '중';
+    const modeLabel = { public_servant:'공무원', public_corp:'공기업', mixed:'혼합' }[r.mode] || '혼합';
+    const startDate = new Date(r.startTime);
+    document.getElementById('report-meta').textContent =
+      `${startDate.toLocaleDateString('ko-KR')} ${startDate.toLocaleTimeString('ko-KR', {hour:'2-digit',minute:'2-digit'})} | 소요시간 ${formatTime(r.duration || 0)}`;
+
+    document.getElementById('report-badges').innerHTML = `
+      <span class="badge badge-${r.difficulty}">${diffLabel}</span>
+      <span class="badge" style="margin-left:6px;background:rgba(79,142,247,.15);color:var(--accent)">${modeLabel}</span>
+    `;
+
+    // 핵심 통계
+    document.getElementById('stat-chips').innerHTML = [
+      `<div class="stat-chip">총 질문 <strong>${(r.answers || []).length}개</strong></div>`,
+      `<div class="stat-chip">반복어 <strong>${((r.fillerWordRate||0)).toFixed(1)}회/질문</strong></div>`,
+      `<div class="stat-chip">평균 응답 <strong>${((r.avgResponseTime||0)).toFixed(1)}초</strong></div>`,
+      `<div class="stat-chip">시선 유지 <strong>${((r.gazeScore||0)*100).toFixed(0)}%</strong></div>`,
+    ].join('');
+
+    // 점수 카드
+    const scores = [
+      { label:'답변 내용', value: r.contentScore||0,  color:'var(--accent)' },
+      { label:'논리 구조', value: r.logicScore||0,    color:'var(--accent)' },
+      { label:'말 명료도', value: r.clarityScore||0,  color:'var(--success)' },
+      { label:'압박 대응', value: r.pressureScore||0, color:'var(--warn)' },
+      { label:'시선 유지', value: r.gazeScore||0,     color:'var(--success)' },
+    ];
+    document.getElementById('score-section').innerHTML = scores.map(s => {
+      const pct = Math.round((s.value || 0) * 100);
+      return `<div class="score-card">
+        <div class="s-label">${s.label}</div>
+        <div class="s-value" style="color:${s.color}">${pct}</div>
+        <div style="font-size:9px;color:var(--text-dim)">/ 100점</div>
+        <div class="s-bar"><div class="s-fill" style="width:${pct}%;background:${s.color}"></div></div>
+      </div>`;
+    }).join('');
+
+    // 종합 피드백
+    document.getElementById('overall-feedback').textContent =
+      r.overallFeedback || '피드백이 생성되지 않았습니다.';
+
+    // 강점
+    const strengthsEl = document.getElementById('strengths-list');
+    (r.strengths || []).forEach(s => {
+      const li = document.createElement('li');
+      li.innerHTML = `<span style="color:var(--success);flex-shrink:0">✓</span> ${s}`;
+      strengthsEl.appendChild(li);
+    });
+    if (!(r.strengths?.length)) {
+      strengthsEl.innerHTML = '<li style="color:var(--text-dim)">데이터 없음</li>';
+    }
+
+    // 개선점
+    const improvEl = document.getElementById('improvements-list');
+    (r.improvements || []).forEach(s => {
+      const li = document.createElement('li');
+      li.innerHTML = `<span style="color:var(--warn);flex-shrink:0">→</span> ${s}`;
+      improvEl.appendChild(li);
+    });
+    if (!(r.improvements?.length)) {
+      improvEl.innerHTML = '<li style="color:var(--text-dim)">데이터 없음</li>';
+    }
+
+    // 답변 상세
+    const detailEl = document.getElementById('answers-detail');
+    (r.answers || []).forEach((a, i) => {
+      const hasText = a.answerText && a.answerText.trim();
+      detailEl.innerHTML += `
+        <div class="answer-item">
+          <div class="a-q">Q${i+1}. ${a.questionText}</div>
+          <div class="a-text">${hasText ? a.answerText : '<span style="color:var(--text-dim)">(답변 없음)</span>'}</div>
+          <div class="a-meta">
+            <span>⏱ ${(a.duration||0).toFixed(1)}초</span>
+            <span class="${(a.fillerCount||0) > 3 ? 'warn' : 'ok'}">반복어 ${a.fillerCount||0}회</span>
+            <span class="${a.hasConclusion ? 'ok':'warn'}">두괄식 ${a.hasConclusion?'✓':'✗'}</span>
+            <span class="${a.hasEvidence ? 'ok':'warn'}">근거 ${a.hasEvidence?'✓':'✗'}</span>
+            <span class="${a.hasExample ? 'ok':'warn'}">예시 ${a.hasExample?'✓':'✗'}</span>
+            <span>시선 ${((a.gazeRatio||0)*100).toFixed(0)}%</span>
+          </div>
+        </div>`;
+    });
+  }
+
+  // ── 내보내기 ─────────────────────────────────────
+  function buildTextReport() {
+    const r = APP.getSessionReport();
+    if (!r) return '데이터 없음';
+    const diffLabel = { easy:'하(쉬움)', medium:'중(보통)', hard:'상(어려움)' }[r.difficulty] || '중';
+    const lines = [
+      '=== 압박면접 시뮬레이터 결과 리포트 ===',
+      `날짜: ${new Date(r.startTime).toLocaleString('ko-KR')}`,
+      `난이도: ${diffLabel} | 소요시간: ${formatTime(r.duration||0)}`,
+      '',
+      '[평가 점수]',
+      `  답변 내용: ${Math.round((r.contentScore||0)*100)}점`,
+      `  논리 구조: ${Math.round((r.logicScore||0)*100)}점`,
+      `  말 명료도: ${Math.round((r.clarityScore||0)*100)}점`,
+      `  압박 대응: ${Math.round((r.pressureScore||0)*100)}점`,
+      `  시선 유지: ${Math.round((r.gazeScore||0)*100)}점`,
+      `  반복어:    ${(r.fillerWordRate||0).toFixed(1)}회/질문`,
+      `  평균 응답: ${(r.avgResponseTime||0).toFixed(1)}초`,
+      '',
+      '[종합 피드백]',
+      r.overallFeedback || '없음',
+      '',
+      '[강점]',
+      ...(r.strengths||[]).map(s => `  - ${s}`),
+      '',
+      '[개선점]',
+      ...(r.improvements||[]).map(s => `  - ${s}`),
+      '',
+      '[답변 상세]',
+      ...(r.answers||[]).flatMap((a, i) => [
+        `Q${i+1}. ${a.questionText}`,
+        `  A: ${a.answerText || '(없음)'}`,
+        `  (${(a.duration||0).toFixed(1)}초, 반복어 ${a.fillerCount||0}회)`,
+        '',
+      ]),
+      '※ 이 리포트는 AI 자동 분석 결과이며 실제 합불과 무관합니다.',
+    ];
+    return lines.join('\n');
+  }
+
+  function exportText() {
+    const text = buildTextReport();
+    const now = new Date();
+    const fname = `interview_report_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}.txt`;
+    downloadFile(fname, text, 'text/plain;charset=utf-8');
+    document.getElementById('export-status').textContent = `저장됨: ${fname}`;
+  }
+
+  function exportJSON() {
+    const r = APP.getSessionReport();
+    const now = new Date();
+    const fname = `interview_report_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}.json`;
+    downloadFile(fname, JSON.stringify(r, null, 2), 'application/json;charset=utf-8');
+    document.getElementById('export-status').textContent = `저장됨: ${fname}`;
+  }
+</script>
+</body>
+</html>

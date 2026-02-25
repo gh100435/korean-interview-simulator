@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>면접 진행 — 압박면접 시뮬레이터</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+/* ── 전체 레이아웃 ─────────────────────────────── */
+body { display:flex; flex-direction:column; height:100vh; overflow:hidden; }
+.interview-layout {
+  flex:1; display:grid;
+  grid-template-rows: auto 1fr auto;
+  gap:0; overflow:hidden;
+}
+
+/* ── 상단 바 ─────────────────────────────────── */
+.top-bar {
+  display:flex; align-items:center; gap:10px;
+  padding:10px 16px; background:var(--bg-card);
+  border-bottom:1px solid var(--border); flex-shrink:0;
+}
+.session-info { font-size:12px; color:var(--text-sub); }
+.top-controls { margin-left:auto; display:flex; gap:8px; align-items:center; }
+
+/* ── 메인 콘텐츠 ──────────────────────────────── */
+.main-content {
+  display:grid;
+  grid-template-columns: 1fr 220px;
+  gap:12px;
+  padding:12px 16px;
+  overflow:hidden;
+}
+@media(max-width:700px){
+  .main-content { grid-template-columns:1fr; grid-template-rows:1fr auto; }
+}
+
+/* ── 면접관 패널 영역 ─────────────────────────── */
+.interviewer-area {
+  display:flex; flex-direction:column; gap:10px; overflow:hidden;
+}
+
+.avatar-panel-row {
+  display:flex; gap:10px; justify-content:center; flex-wrap:wrap;
+}
+
+/* 면접관 아바타 개선 */
+.avatar-card { position:relative; }
+.avatar-card .speak-ring {
+  position:absolute; inset:-4px; border-radius:50%; border:2px solid transparent;
+  transition:border-color .2s;
+}
+.avatar-card.speaking .speak-ring { border-color:var(--accent); animation:speakPulse 1s infinite; }
+@keyframes speakPulse {
+  0%,100%{box-shadow:0 0 0 0 rgba(79,142,247,.4)}
+  50%{box-shadow:0 0 0 6px rgba(79,142,247,0)}
+}
+
+/* ── 자막 영역 ─────────────────────────────────── */
+.subtitle-area { flex:1; display:flex; flex-direction:column; gap:8px; overflow:hidden; }
+
+.q-label {
+  font-size:10px; font-weight:700; color:var(--text-dim);
+  text-transform:uppercase; letter-spacing:.08em;
+}
+.interviewer-bubble {
+  background:var(--bg-card2); border:1px solid var(--border);
+  border-radius:12px; padding:14px 16px;
+  font-size:15px; line-height:1.75; min-height:60px;
+  flex-shrink:0;
+}
+.interviewer-bubble.speaking { border-color:var(--accent); box-shadow:0 0 12px rgba(79,142,247,.2); }
+
+.user-answer-area {
+  flex:1; background:rgba(79,142,247,.05);
+  border:1px solid rgba(79,142,247,.2);
+  border-radius:12px; padding:12px 14px;
+  font-size:13px; color:var(--text-sub);
+  overflow-y:auto; min-height:60px;
+}
+.user-answer-area.listening {
+  border-color:var(--success); background:rgba(67,201,123,.05);
+}
+
+/* ── 실시간 피드백 ────────────────────────────── */
+.realtime-feedback {
+  padding:6px 12px; border-radius:8px;
+  background:rgba(224,154,58,.15); border:1px solid rgba(224,154,58,.3);
+  font-size:11px; color:var(--warn); font-weight:600;
+  display:none;
+}
+.realtime-feedback.show { display:block; }
+
+/* ── 우측 패널 ─────────────────────────────────── */
+.right-panel { display:flex; flex-direction:column; gap:10px; }
+
+.pip-camera {
+  width:100%; aspect-ratio:4/3; background:#111;
+  border-radius:10px; overflow:hidden; position:relative;
+  border:2px solid var(--border);
+}
+.pip-camera video { width:100%; height:100%; object-fit:cover; transform:scaleX(-1); }
+.pip-label { position:absolute; bottom:4px; left:6px; font-size:9px; color:#fff;
+             background:rgba(0,0,0,.6); padding:1px 6px; border-radius:8px; }
+
+/* 타이머 */
+.timer-section { text-align:center; }
+
+/* 진행 상황 */
+.progress-section { }
+.q-progress-text { font-size:11px; color:var(--text-sub); margin-bottom:4px; }
+
+/* ── 하단 컨트롤 ──────────────────────────────── */
+.bottom-bar {
+  display:flex; align-items:center; gap:10px;
+  padding:10px 16px; background:var(--bg-card);
+  border-top:1px solid var(--border); flex-shrink:0;
+}
+.bottom-bar .spacer { flex:1; }
+
+/* 텍스트 입력 모드 */
+.text-input-row {
+  flex:1; display:flex; gap:8px;
+}
+.text-input-row input {
+  flex:1; padding:8px 12px; font-size:13px;
+  border-radius:8px;
+}
+
+/* ── 오버레이들 ─────────────────────────────────── */
+.overlay {
+  position:fixed; inset:0;
+  background:rgba(0,0,0,.75);
+  display:flex; align-items:center; justify-content:center;
+  z-index:200; backdrop-filter:blur(4px);
+}
+.overlay-box {
+  background:var(--bg-card); border-radius:16px;
+  padding:28px 32px; max-width:400px; width:90%;
+  text-align:center;
+}
+.overlay-box h2 { font-size:20px; margin-bottom:12px; }
+.overlay-box p  { font-size:13px; color:var(--text-sub); margin-bottom:20px; }
+.overlay-box .btn-row { display:flex; gap:10px; justify-content:center; }
+
+/* 로딩 스피너 */
+.spinner {
+  width:24px; height:24px; border:3px solid var(--border);
+  border-top-color:var(--accent); border-radius:50%;
+  animation:spin .8s linear infinite; display:inline-block;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* 안전 장치 */
+#safety-overlay .overlay-box { border:1px solid var(--warn); }
+</style>
+</head>
+<body>
+
+<div class="interview-layout">
+
+  <!-- ── 상단 바 ── -->
+  <div class="top-bar">
+    <span class="session-info">
+      <span class="badge" id="diff-badge">중</span>
+      <span id="q-counter" style="margin-left:8px;font-size:12px">Q 1 / 8</span>
+    </span>
+    <span id="session-elapsed" style="font-size:12px;color:var(--text-dim);margin-left:8px">00:00</span>
+    <div class="top-controls">
+      <button class="btn btn-warn" style="padding:6px 12px;font-size:12px"
+        onclick="onReducePressure()">😮‍💨 압박 완화</button>
+      <button class="btn btn-ghost" style="padding:6px 12px;font-size:12px"
+        id="btn-pause" onclick="togglePause()">⏸ 일시정지</button>
+      <button class="btn btn-danger" style="padding:6px 12px;font-size:12px"
+        onclick="confirmAbort()">⏹ 종료</button>
+    </div>
+  </div>
+
+  <!-- ── 메인 콘텐츠 ── -->
+  <div class="main-content">
+
+    <!-- 면접관 + 자막 -->
+    <div class="interviewer-area">
+
+      <!-- 면접관 아바타 패널 -->
+      <div class="avatar-panel-row" id="avatar-panel"></div>
+
+      <!-- 실시간 피드백 -->
+      <div class="realtime-feedback" id="realtime-feedback"></div>
+
+      <!-- 면접관 발화 자막 -->
+      <div class="q-label">면접관 발화</div>
+      <div class="interviewer-bubble" id="interviewer-bubble">
+        <span class="spinner"></span> 면접관이 준비 중입니다...
+      </div>
+
+      <!-- 사용자 답변 -->
+      <div class="q-label" style="margin-top:4px">내 답변 <span id="listen-indicator"></span></div>
+      <div class="user-answer-area" id="user-answer-area">
+        답변을 준비해 주세요...
+      </div>
+
+    </div>
+
+    <!-- 우측 패널 -->
+    <div class="right-panel">
+
+      <!-- 카메라 PIP -->
+      <div class="pip-camera" id="pip-camera">
+        <video id="pip-video" autoplay muted playsinline></video>
+        <div class="pip-label" id="pip-label">나</div>
+      </div>
+      <div style="font-size:10px;color:var(--text-dim);text-align:center;margin-top:2px"
+           id="face-status-text">얼굴 감지 준비 중...</div>
+
+      <!-- 타이머 -->
+      <div class="timer-section">
+        <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">답변 시간</div>
+        <div class="timer-ring" id="timer-ring">
+          <svg width="64" height="64" viewBox="0 0 64 64">
+            <circle class="track" cx="32" cy="32" r="28"/>
+            <circle class="fill"  cx="32" cy="32" r="28"
+              stroke-dasharray="176" stroke-dashoffset="0"/>
+          </svg>
+          <div class="timer-text" id="timer-text">--</div>
+        </div>
+      </div>
+
+      <!-- 진행 현황 -->
+      <div class="progress-section">
+        <div class="q-progress-text" id="q-progress-text">질문 1 / 8</div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+        </div>
+      </div>
+
+      <!-- 필러워드 실시간 카운터 -->
+      <div style="background:var(--bg-card2);border:1px solid var(--border);
+                  border-radius:8px;padding:10px;font-size:11px">
+        <div style="color:var(--text-dim);margin-bottom:4px">반복어 감지</div>
+        <div id="filler-count" style="font-size:20px;font-weight:800;color:var(--accent)">0</div>
+        <div style="color:var(--text-dim)">회 (누적)</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── 하단 컨트롤 ── -->
+  <div class="bottom-bar">
+    <!-- 텍스트 입력 모드 -->
+    <div class="text-input-row" id="text-input-row" style="display:none">
+      <input type="text" id="text-answer-input" placeholder="답변을 입력하세요..." maxlength="500"
+        onkeydown="if(event.key==='Enter')submitTextAnswer()">
+      <button class="btn btn-primary" onclick="submitTextAnswer()">답변 전송</button>
+    </div>
+    <!-- 음성 모드 -->
+    <div id="voice-status" style="font-size:12px;color:var(--text-sub)"></div>
+    <div class="spacer"></div>
+    <button class="btn btn-ghost" style="padding:6px 12px;font-size:12px"
+      id="btn-skip" onclick="skipQuestion()" disabled>질문 건너뜀 →</button>
+  </div>
+
+</div>
+
+<!-- ── 오버레이: 일시정지 ── -->
+<div class="overlay" id="pause-overlay" style="display:none">
+  <div class="overlay-box">
+    <h2>⏸ 일시정지</h2>
+    <p>면접이 일시정지 되었습니다.<br>준비가 되면 재개하세요.</p>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="togglePause()">▶ 재개</button>
+      <button class="btn btn-danger"  onclick="confirmAbort()">종료</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 오버레이: 종료 확인 ── -->
+<div class="overlay" id="abort-overlay" style="display:none">
+  <div class="overlay-box">
+    <h2>면접을 종료할까요?</h2>
+    <p>지금까지의 답변으로 리포트를 생성합니다.</p>
+    <div class="btn-row">
+      <button class="btn btn-ghost"   onclick="closeAbortDialog()">계속하기</button>
+      <button class="btn btn-danger"  onclick="abortSession()">종료하고 리포트 보기</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 오버레이: 안전 장치 (FR-110) ── -->
+<div class="overlay" id="safety-overlay" style="display:none">
+  <div class="overlay-box" style="border:1px solid var(--warn)">
+    <h2>💛 잠깐, 괜찮으세요?</h2>
+    <p id="safety-msg">압박 강도가 높습니다.<br>잠시 쉬어가도 됩니다.</p>
+    <div class="btn-row">
+      <button class="btn btn-warn"    onclick="closeSafety()">계속하기</button>
+      <button class="btn btn-ghost"   onclick="onReducePressure(); closeSafety()">압박 낮추기</button>
+      <button class="btn btn-danger"  onclick="abortSession()">즉시 종료</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 오버레이: 리포트 생성 중 ── -->
+<div class="overlay" id="loading-overlay" style="display:none">
+  <div class="overlay-box">
+    <div class="spinner" style="width:40px;height:40px;margin:0 auto 16px"></div>
+    <h2>리포트 생성 중...</h2>
+    <p>AI가 답변을 분석하고 있습니다.<br>잠시만 기다려 주세요.</p>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/questions.js"></script>
+<script src="js/speech.js"></script>
+<script src="js/face.js"></script>
+<script src="js/llm.js"></script>
+
+<script>
+// ===================================================
+//  면접 세션 메인 로직
+// ===================================================
+
+const config = APP.getSessionConfig();
+const diffLevel = { easy:0, medium:1, hard:2 }[config.difficulty] ?? 1;
+
+// 상태
+let sessionState   = 'idle';   // idle | speaking | listening | processing | done
+let questions      = [];
+let currentQIdx    = 0;
+let activePanel    = [];
+let currentSpeaker = '';
+let answerRecords  = [];
+let currentAnswer  = null;
+let timerInterval  = null;
+let elapsedInterval = null;
+let timerRemaining = 0;
+let sessionElapsed = 0;
+let totalFillerCount = 0;
+let isPaused       = false;
+let pressureReduced = false;
+
+let faceService = null;
+let gazeScores  = [];
+
+// ── 초기화 ─────────────────────────────────────────
+window.onload = async () => {
+  setupBadge();
+  setupPanel();
+  setupQuestions();
+  await setupCamera();
+  setupSpeech();
+  startElapsedTimer();
+
+  if (config.typingMode) {
+    document.getElementById('text-input-row').style.display = 'flex';
+  }
+
+  // 세션 시작
+  await runOpeningRemark();
+  runInterviewLoop();
+};
+
+window.onunload = () => { faceService?.stopCamera(); };
+
+function setupBadge() {
+  const labels = { easy:'하', medium:'중', hard:'상' };
+  const el = document.getElementById('diff-badge');
+  el.textContent = labels[config.difficulty] || '중';
+  el.className = `badge badge-${config.difficulty}`;
+}
+
+function setupPanel() {
+  const pools = APP.difficultyPanels[config.difficulty];
+  activePanel = pools[Math.floor(Math.random() * pools.length)].slice();
+  renderAvatarPanel();
+}
+
+function setupQuestions() {
+  questions = getQuestions(config.difficulty, 8);
+  updateProgress();
+}
+
+async function setupCamera() {
+  if (config.subtitleOnly) return;
+  const videoEl = document.getElementById('pip-video');
+  faceService = new FaceDetectionService(videoEl, null);
+  const ok = await faceService.startCamera();
+  if (ok) {
+    faceService.onResult = onFaceResult;
+    faceService.initFaceMesh();
+  } else {
+    document.getElementById('pip-camera').style.display = 'none';
+  }
+}
+
+function setupSpeech() {
+  speechService.onPartial = (t) => {
+    if (sessionState !== 'listening') return;
+    document.getElementById('user-answer-area').textContent = t + '...';
+    updateFillerCount(t);
+  };
+  speechService.onFinal = (t) => {
+    if (sessionState !== 'listening') return;
+    document.getElementById('user-answer-area').textContent = t;
+    updateFillerCount(t);
+  };
+}
+
+// ── 아바타 패널 렌더링 ────────────────────────────
+function renderAvatarPanel() {
+  const container = document.getElementById('avatar-panel');
+  container.innerHTML = activePanel.map(id => {
+    const iw = APP.interviewers[id];
+    return `<div class="avatar-card" id="avatar-${id}">
+      <div class="avatar-face">${iw?.emoji || '👤'}</div>
+      <div class="avatar-name">${iw?.name || id}</div>
+      <div class="avatar-role">${iw?.role || ''}</div>
+    </div>`;
+  }).join('');
+}
+
+function setActiveSpeaker(speakerId) {
+  currentSpeaker = speakerId;
+  document.querySelectorAll('.avatar-card').forEach(el => el.classList.remove('speaking'));
+  const el = document.getElementById('avatar-' + speakerId);
+  if (el) el.classList.add('speaking');
+}
+
+function clearActiveSpeaker() {
+  document.querySelectorAll('.avatar-card').forEach(el => el.classList.remove('speaking'));
+  currentSpeaker = '';
+}
+
+// ── 인터뷰 루프 ────────────────────────────────────
+async function runOpeningRemark() {
+  const speaker = 'chairperson';
+  setActiveSpeaker(speaker);
+  setBubble('면접을 시작하겠습니다. 준비되셨습니까?', true);
+  if (!config.subtitleOnly) {
+    await speechService.speak('면접을 시작하겠습니다. 준비되셨습니까?', 'authority');
+  }
+  clearActiveSpeaker();
+}
+
+async function runInterviewLoop() {
+  for (let i = 0; i < questions.length; i++) {
+    if (sessionState === 'done') break;
+    await waitIfPaused();
+
+    currentQIdx = i;
+    updateProgress();
+
+    const q = questions[i];
+    const speaker = selectSpeaker(q);
+
+    // 면접관 질문
+    await askQuestion(q, speaker);
+    if (sessionState === 'done') break;
+
+    // 사용자 답변 대기
+    const record = await waitForAnswer(q);
+    answerRecords.push(record);
+
+    // 꼬리질문 여부
+    const followUpChance = APP.followUpChance[config.difficulty];
+    if (Math.random() < followUpChance && !isPaused && sessionState !== 'done') {
+      await runFollowUp(speaker, record);
+      if (sessionState === 'done') break;
+      const followRecord = await waitForAnswer(null);
+      answerRecords.push(followRecord);
+    }
+
+    // 상 난이도: 면접관 간 토론 연출 (30%)
+    if (config.difficulty === 'hard' && Math.random() < 0.3 && sessionState !== 'done') {
+      await runDebate(speaker);
+    }
+
+    await sleep(800);
+  }
+
+  if (sessionState !== 'done') finalizeSession();
+}
+
+// ── 질문 발화 ──────────────────────────────────────
+async function askQuestion(q, speaker) {
+  sessionState = 'processing';
+  setBubble('<span class="spinner"></span> 질문 생성 중...', false);
+  setActiveSpeaker(speaker);
+  document.getElementById('btn-skip').disabled = true;
+
+  try {
+    const resp = await claudeAgent.generateResponse({
+      userAnswer: currentQIdx === 0 ? null : (answerRecords.at(-1)?.answerText || null),
+      panel: activePanel,
+      speaker,
+      difficulty: config.difficulty,
+      mode: config.mode,
+    });
+
+    await speakResponse(resp, speaker);
+  } catch (err) {
+    // API 실패 → 기본 질문 사용
+    const fallback = { speech: q.text, expression: 'neutral', action: 'none' };
+    await speakResponse(fallback, speaker);
+    showToast('AI 연결 실패. 기본 질문으로 진행합니다.', 'warn');
+  }
+}
+
+async function runFollowUp(speaker, prevRecord) {
+  sessionState = 'processing';
+  setBubble('<span class="spinner"></span> 꼬리질문 생성 중...', false);
+  setActiveSpeaker(speaker);
+
+  try {
+    const resp = await claudeAgent.generateResponse({
+      userAnswer: prevRecord.answerText || '(답변 없음)',
+      panel: activePanel,
+      speaker,
+      difficulty: config.difficulty,
+      mode: config.mode,
+    });
+    await speakResponse(resp, speaker);
+  } catch {
+    const q = questions[currentQIdx];
+    const fu = q.followUps?.[0] || '조금 더 구체적으로 설명해 주시겠어요?';
+    await speakResponse({ speech: fu, expression: 'suspicious', action: 'followup' }, speaker);
+  }
+}
+
+async function runDebate(prevSpeaker) {
+  const otherSpeakers = activePanel.filter(id => id !== prevSpeaker);
+  if (!otherSpeakers.length) return;
+  const debater = otherSpeakers[Math.floor(Math.random() * otherSpeakers.length)];
+  setActiveSpeaker(debater);
+  try {
+    const resp = await claudeAgent.generateResponse({
+      userAnswer: '(면접관 간 의견 교환을 짧게 연출해주세요)',
+      panel: activePanel, speaker: debater,
+      difficulty: config.difficulty, mode: config.mode,
+    });
+    setBubble(resp.speech, false);
+    if (!config.subtitleOnly) {
+      await speechService.speak(resp.speech, APP.interviewers[debater]?.voice || 'neutral');
+    }
+    await sleep(500);
+  } catch {}
+  clearActiveSpeaker();
+}
+
+async function speakResponse(resp, speaker) {
+  const bubble = document.getElementById('interviewer-bubble');
+  bubble.classList.add('speaking');
+  await typeText(bubble, resp.speech || '...', 25);
+  bubble.classList.remove('speaking');
+
+  setActiveSpeaker(speaker);
+  if (!config.subtitleOnly) {
+    const voice = APP.interviewers[speaker]?.voice || 'neutral';
+    await speechService.speak(resp.speech, voice);
+  } else {
+    await sleep(resp.speech.length * 60); // 읽는 시간 시뮬레이션
+  }
+  clearActiveSpeaker();
+
+  // interrupt 액션 → 안전 장치
+  if (resp.action === 'interrupt' && config.difficulty === 'hard') {
+    showSafety('면접관이 답변을 끊었습니다. 핵심만 간결하게 말해보세요.');
+  }
+}
+
+// ── 사용자 답변 대기 ──────────────────────────────
+function waitForAnswer(q) {
+  return new Promise(resolve => {
+    currentAnswer = {
+      questionText: q?.text || '(꼬리질문)',
+      answerText: '',
+      duration: 0,
+      fillerCount: 0,
+      hasConclusion: false, hasEvidence: false, hasExample: false,
+      gazeRatio: 0,
+    };
+
+    document.getElementById('user-answer-area').textContent = '답변을 시작하세요...';
+    document.getElementById('user-answer-area').classList.add('listening');
+    document.getElementById('btn-skip').disabled = false;
+    document.getElementById('listen-indicator').innerHTML =
+      '<span class="status-dot ok pulse" style="margin-left:4px"></span>';
+
+    sessionState = 'listening';
+    const startTime = Date.now();
+
+    // 음성 모드
+    if (!config.typingMode) {
+      speechService.transcript = '';
+      const started = speechService.startListening();
+      if (started) {
+        document.getElementById('voice-status').textContent = '🎤 음성 인식 중... (말씀 후 2.5초 침묵 시 자동 완료)';
+      }
+    } else {
+      document.getElementById('voice-status').textContent = '⌨️ 답변을 입력하고 Enter를 누르세요';
+    }
+
+    // 타이머
+    if (config.timeLimitEnabled) {
+      timerRemaining = config.timeLimitSec;
+      updateTimerRing(document.getElementById('timer-ring'), timerRemaining, config.timeLimitSec);
+      timerInterval = setInterval(() => {
+        if (isPaused) return;
+        timerRemaining -= 0.1;
+        updateTimerRing(document.getElementById('timer-ring'), timerRemaining, config.timeLimitSec);
+        if (timerRemaining <= 10 && timerRemaining > 9.9)
+          showToast('⏰ 10초 남았습니다', 'warn');
+        if (timerRemaining <= 0) {
+          clearInterval(timerInterval);
+          finalizeAnswer(startTime, resolve);
+        }
+      }, 100);
+    }
+
+    // STT 무음 감지 → 자동 완료
+    speechService.onSilence = () => {
+      if (sessionState !== 'listening') return;
+      clearInterval(timerInterval);
+      finalizeAnswer(startTime, resolve);
+    };
+
+    // 외부에서 resolve 접근용
+    window._resolveAnswer = (forced) => {
+      clearInterval(timerInterval);
+      finalizeAnswer(startTime, resolve);
+    };
+  });
+}
+
+function finalizeAnswer(startTime, resolve) {
+  if (sessionState !== 'listening') return;
+  sessionState = 'processing';
+
+  speechService.stopListening();
+  const text = config.typingMode
+    ? (window._typingAnswer || '')
+    : speechService.transcript;
+
+  currentAnswer.answerText = text;
+  currentAnswer.duration   = (Date.now() - startTime) / 1000;
+  currentAnswer.fillerCount = countFillerWords(text);
+  const struct = analyzeAnswerStructure(text);
+  Object.assign(currentAnswer, struct);
+
+  // 시선 비율
+  currentAnswer.gazeRatio = gazeScores.length
+    ? gazeScores.reduce((a,b)=>a+b,0) / gazeScores.length : 0;
+  gazeScores = [];
+
+  document.getElementById('user-answer-area').classList.remove('listening');
+  document.getElementById('listen-indicator').innerHTML = '';
+  document.getElementById('voice-status').textContent = '';
+  document.getElementById('btn-skip').disabled = true;
+  window._typingAnswer = '';
+
+  resolve(currentAnswer);
+}
+
+// ── 텍스트 입력 모드 ──────────────────────────────
+window._typingAnswer = '';
+function submitTextAnswer() {
+  const input = document.getElementById('text-answer-input');
+  window._typingAnswer = input.value.trim();
+  document.getElementById('user-answer-area').textContent = window._typingAnswer;
+  input.value = '';
+  window._resolveAnswer?.();
+}
+
+// ── 버튼 핸들러 ──────────────────────────────────
+function skipQuestion() {
+  window._resolveAnswer?.();
+}
+
+function togglePause() {
+  isPaused = !isPaused;
+  document.getElementById('pause-overlay').style.display = isPaused ? 'flex' : 'none';
+  document.getElementById('btn-pause').textContent = isPaused ? '▶ 재개' : '⏸ 일시정지';
+  if (isPaused) speechService.stopSpeaking();
+}
+
+function waitIfPaused() {
+  return new Promise(resolve => {
+    if (!isPaused) { resolve(); return; }
+    const check = setInterval(() => { if (!isPaused) { clearInterval(check); resolve(); }}, 200);
+  });
+}
+
+function confirmAbort() {
+  document.getElementById('pause-overlay').style.display = 'none';
+  document.getElementById('abort-overlay').style.display = 'flex';
+}
+function closeAbortDialog() {
+  document.getElementById('abort-overlay').style.display = 'none';
+  if (isPaused) document.getElementById('pause-overlay').style.display = 'flex';
+}
+function abortSession() {
+  document.getElementById('abort-overlay').style.display = 'none';
+  finalizeSession();
+}
+
+function onReducePressure() {
+  pressureReduced = true;
+  activePanel = activePanel.filter(id => id !== 'stress' && id !== 'citizen');
+  if (activePanel.length === 0) activePanel = ['supportive', 'rational'];
+  renderAvatarPanel();
+  showToast('압박 강도를 낮췄습니다', 'success');
+  showRealtime('압박 강도를 낮췄습니다. 편안하게 계속하세요.', 4000);
+}
+
+// ── 안전 장치 ─────────────────────────────────────
+function showSafety(msg) {
+  document.getElementById('safety-msg').textContent = msg;
+  document.getElementById('safety-overlay').style.display = 'flex';
+}
+function closeSafety() {
+  document.getElementById('safety-overlay').style.display = 'none';
+}
+
+// ── 실시간 피드백 ─────────────────────────────────
+function showRealtime(msg, duration = 3000) {
+  const el = document.getElementById('realtime-feedback');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), duration);
+}
+
+// ── 얼굴 감지 콜백 ───────────────────────────────
+function onFaceResult(result) {
+  const pip = document.getElementById('pip-camera');
+  const text = document.getElementById('face-status-text');
+
+  if (result.faceDetected) {
+    pip.style.borderColor = result.isLookingAtCamera ? 'var(--success)' : 'var(--warn)';
+    text.textContent = result.isLookingAtCamera ? '✓ 정면 응시' : '카메라를 봐주세요';
+    if (sessionState === 'listening') gazeScores.push(result.gazeScore);
+    if (!result.isLookingAtCamera && sessionState === 'listening')
+      showRealtime('카메라를 봐주세요', 2000);
+  } else {
+    pip.style.borderColor = 'var(--danger)';
+    text.textContent = '얼굴 미감지';
+    if (sessionState === 'listening') showRealtime('카메라를 확인해주세요', 2000);
+  }
+}
+
+// ── 필러워드 카운터 ───────────────────────────────
+function updateFillerCount(text) {
+  const cnt = countFillerWords(text);
+  document.getElementById('filler-count').textContent = totalFillerCount + cnt;
+}
+
+// ── UI 헬퍼 ─────────────────────────────────────
+function setBubble(html, isSpeaking) {
+  const el = document.getElementById('interviewer-bubble');
+  el.innerHTML = html;
+  el.classList.toggle('speaking', !!isSpeaking);
+}
+
+function updateProgress() {
+  const total = questions.length;
+  const current = currentQIdx + 1;
+  document.getElementById('q-counter').textContent = `Q ${current} / ${total}`;
+  document.getElementById('q-progress-text').textContent = `질문 ${current} / ${total}`;
+  document.getElementById('progress-fill').style.width = ((current / total) * 100) + '%';
+}
+
+// ── 경과 시간 타이머 ─────────────────────────────
+function startElapsedTimer() {
+  elapsedInterval = setInterval(() => {
+    if (!isPaused) {
+      sessionElapsed++;
+      document.getElementById('session-elapsed').textContent = formatTime(sessionElapsed);
+    }
+  }, 1000);
+}
+
+// ── 면접관 선택 ──────────────────────────────────
+function selectSpeaker(q) {
+  if (q?.preferred && activePanel.includes(q.preferred)) return q.preferred;
+  return activePanel[currentQIdx % activePanel.length];
+}
+
+// ── 세션 종료 ────────────────────────────────────
+function finalizeSession() {
+  sessionState = 'done';
+  clearInterval(timerInterval);
+  clearInterval(elapsedInterval);
+  speechService.stopListening();
+  speechService.stopSpeaking();
+  faceService?.stopCamera();
+
+  // 기록 누적
+  totalFillerCount = answerRecords.reduce((s, a) => s + (a.fillerCount || 0), 0);
+
+  const report = {
+    sessionId: Date.now().toString(),
+    startTime: new Date(Date.now() - sessionElapsed * 1000).toISOString(),
+    endTime:   new Date().toISOString(),
+    duration:  sessionElapsed,
+    difficulty: config.difficulty,
+    mode:       config.mode,
+    answers:    answerRecords,
+    gazeScore:  answerRecords.length ? answerRecords.reduce((s,a)=>s+(a.gazeRatio||0),0)/answerRecords.length : 0,
+    fillerWordRate: answerRecords.length ? totalFillerCount / answerRecords.length : 0,
+    avgResponseTime: answerRecords.length ? answerRecords.reduce((s,a)=>s+(a.duration||0),0)/answerRecords.length : 0,
+    contentScore:0, logicScore:0, clarityScore:0, pressureScore:0,
+    overallFeedback:'', strengths:[], improvements:[],
+  };
+
+  APP.setSessionReport(report);
+
+  // 리포트 생성 (Claude)
+  document.getElementById('loading-overlay').style.display = 'flex';
+  claudeAgent.generateFeedback(report)
+    .then(fb => {
+      Object.assign(report, fb);
+      APP.setSessionReport(report);
+    })
+    .catch(err => {
+      report.overallFeedback = 'AI 피드백 생성에 실패했습니다. 네트워크를 확인하세요.';
+      APP.setSessionReport(report);
+    })
+    .finally(() => goTo('report.html'));
+}
+
+// ── 유틸 ──────────────────────────────────────────
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+</script>
+</body>
+</html>
